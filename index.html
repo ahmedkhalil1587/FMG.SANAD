@@ -155,39 +155,9 @@ body{font-family:"Segoe UI",system-ui,sans-serif;background:#f0f4f8;color:#1e293
       <div class="upload-btns">
         <button class="btn-upload" onclick="document.getElementById('file-input').click()">📂 رفع ملف Excel</button>
         <button class="btn-demo" onclick="connectPresetSheet()" style="background:#0F7A4F;border-color:#0F7A4F;color:#fff">🔗 بيانات Live</button>
-        <button onclick="showGASHelp()" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:9px;padding:10px 16px;font-size:12px;font-weight:600;cursor:pointer">⚙️ إعداد CORS</button>
       </div>
       <input id="file-input" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleFile(event)">
-      <!-- GAS Proxy Modal -->
-      <div id="gas-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center">
-        <div style="background:#fff;border-radius:16px;padding:28px;max-width:580px;width:90%;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px #0004">
-          <h2 style="font-size:17px;font-weight:800;color:#0C6EBD;margin:0 0 6px">🔧 إعداد Google Apps Script Proxy</h2>
-          <p style="font-size:12px;color:#64748b;margin:0 0 16px">خطوة واحدة لحل مشكلة CORS — دقيقتين فقط</p>
-          <div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px;font-size:12px;color:#334155;line-height:1.9">
-            1. افتح <a href="https://script.google.com" target="_blank" style="color:#0C6EBD;font-weight:700">script.google.com</a><br>
-            2. اضغط <strong>New Project</strong><br>
-            3. امسح الكود والصق الكود التالي ثم احفظ (Ctrl+S)<br>
-            4. اضغط <strong>Deploy → New deployment → Web app</strong><br>
-            5. في "Who has access" اختار <strong>Anyone</strong> ثم Deploy<br>
-            6. انسخ الـ URL والصقه في الحقل أدناه
-          </div>
-          <div style="background:#1e293b;border-radius:8px;padding:12px;margin-bottom:14px;position:relative">
-            <button onclick="copyGASCode()" style="position:absolute;top:8px;right:8px;background:#0C6EBD;color:#fff;border:none;border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer">📋 نسخ</button>
-            <pre id="gas-code" style="color:#e2e8f0;font-size:11px;margin:0;white-space:pre-wrap;font-family:monospace">function doGet(e) {
-  var url = e.parameter.url;
-  if(!url) return ContentService.createTextOutput('No URL');
-  var res = UrlFetchApp.fetch(url);
-  return ContentService.createTextOutput(res.getContentText())
-    .setMimeType(ContentService.MimeType.TEXT);
-}</pre>
-          </div>
-          <div style="display:flex;gap:8px;margin-bottom:10px">
-            <input id="gas-url-field" type="text" placeholder="https://script.google.com/macros/s/.../exec" style="flex:1;border:1px solid #cbd5e1;border-radius:7px;padding:8px 12px;font-size:12px">
-            <button onclick="setGASProxy(document.getElementById('gas-url-field').value.trim())" style="background:#0F7A4F;color:#fff;border:none;border-radius:7px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">✅ ربط</button>
-          </div>
-          <button onclick="document.getElementById('gas-modal').style.display='none'" style="width:100%;padding:8px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;cursor:pointer;color:#64748b">إغلاق</button>
-        </div>
-      </div>
+      
 
       <div class="col-hint">
         <strong style="color:#334155">الأعمدة المطلوبة / Expected Columns:</strong><br>
@@ -959,201 +929,116 @@ function updateShareCount(){
 }
 
 // ══════ GOOGLE SHEET LIVE CONNECT ══════
-var GS_URL         = '';
 var GS_TIMER       = null;
 var GS_INTERVAL_MS = 5 * 60 * 1000;
-var PRESET_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRwvgsyblWWPVBiIh_QmK4NFE1Pmw0v_CpkQhpSAWxDbo6s13il8tgtbn5fjH019zJQFUYjNGE-Tu2t/pub?output=csv";
+// GAS proxy + Sheet URL embedded directly
+var GAS_PROXY  = "https://script.google.com/macros/s/AKfycbzVpkQuLrvUtzHHFvcB6jGWJ-2GMXLUlYd-roKq4AkIdsJbt1SFaOVgdYjyC7uTMZV6/exec";
+var SHEET_URL  = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRwvgsyblWWPVBiIh_QmK4NFE1Pmw0v_CpkQhpSAWxDbo6s13il8tgtbn5fjH019zJQFUYjNGE-Tu2t/pub?output=csv";
 
 function connectPresetSheet(){
-  GS_URL = PRESET_SHEET_URL;
-  var gasUrl = '';
-  try{ gasUrl = localStorage.getItem('fdmg_gas_url') || ''; }catch(e){}
-  if(gasUrl){ GS_URL = gasUrl + '?url=' + encodeURIComponent(PRESET_SHEET_URL); }
-  fetchGoogleSheet(true);
+  var url = GAS_PROXY + "?url=" + encodeURIComponent(SHEET_URL);
+  fetchGoogleSheet(url);
 }
 
-function connectGoogleSheet(){
-  var inp = document.getElementById('gs-url-input');
-  var url = inp ? inp.value.trim() : '';
-  if(!url){ alert('من فضلك الصق رابط Google Sheet CSV'); return; }
-  GS_URL = url;
-  fetchGoogleSheet(true);
-}
-
-function setGASProxy(url){
-  if(!url){ alert('الصق رابط GAS أولاً'); return; }
-  try{ localStorage.setItem('fdmg_gas_url', url); }catch(e){}
-  document.getElementById('gas-modal').style.display='none';
-  connectPresetSheet();
-}
-
-function showGASHelp(){
-  document.getElementById('gas-modal').style.display='flex';
-}
-
-function fetchGoogleSheet(isFirst){
-  if(!GS_URL) return;
-  setGsStatus('⏳ جاري تحميل البيانات...', '#B7770D');
-
-  var encoded = encodeURIComponent(GS_URL);
-  var proxies = [
-    GS_URL,
-    'https://corsproxy.io/?' + encoded,
-    'https://api.allorigins.win/raw?url=' + encoded,
-    'https://api.codetabs.com/v1/proxy?quest=' + encoded
-  ];
-  var idx = 0;
-
-  function tryNext(){
-    if(idx >= proxies.length){
-      setGsStatus('❌ تعذّر الاتصال — اضغط ⚙️ إعداد CORS للحل', '#C0392B');
-      var el = document.getElementById('gs-status');
-      if(el){ el.style.cursor='pointer'; el.onclick=showGASHelp; }
-      return;
-    }
-    var url = proxies[idx++];
-    fetch(url, {cache:'no-store'})
-      .then(function(r){
-        if(!r.ok) throw new Error(r.status);
-        return r.text();
-      })
-      .then(function(txt){
-        if(txt.trim().charAt(0)==='{'){
-          try{ var j=JSON.parse(txt); txt=j.contents||j.data||j.body||txt; }catch(e){}
-        }
-        processCSV(txt);
-      })
-      .catch(function(){ setTimeout(tryNext, 300); });
-  }
-
-  function processCSV(csvText){
-    var data = parseCSV(csvText);
-    if(!data || !data.length){
-      setGsStatus('⚠️ لا توجد بيانات — تأكد من صحة الرابط', '#C0392B');
-      return;
-    }
-    document.getElementById('upload-screen').style.display = 'none';
-    document.getElementById('dashboard').style.display     = 'block';
-    document.getElementById('hdr-refresh').textContent     = '🔄 ' + new Date().toLocaleString();
-    var rb = document.getElementById('gs-refresh-btn');
-    var lb = document.getElementById('gs-live-badge');
-    if(rb) rb.style.display = 'inline-block';
-    if(lb) lb.style.display = 'inline-block';
-    initDashboard(data);
-    setGsStatus('✅ متصل — ' + data.length + ' سجل | آخر تحديث: ' + new Date().toLocaleTimeString(), '#0F7A4F');
-    if(GS_TIMER) clearInterval(GS_TIMER);
-    GS_TIMER = setInterval(function(){ fetchGoogleSheet(false); }, GS_INTERVAL_MS);
-  }
-
-  tryNext();
+function fetchGoogleSheet(fetchUrl){
+  setGsStatus("جاري تحميل البيانات...", "#B7770D");
+  fetch(fetchUrl, {cache: "no-store"})
+    .then(function(r){
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      return r.text();
+    })
+    .then(function(txt){
+      var data = parseCSV(txt);
+      if(!data || !data.length){
+        setGsStatus("لا توجد بيانات في الـ Sheet", "#C0392B");
+        return;
+      }
+      document.getElementById("upload-screen").style.display = "none";
+      document.getElementById("dashboard").style.display     = "block";
+      document.getElementById("hdr-refresh").textContent     = "🔄 " + new Date().toLocaleString();
+      var rb = document.getElementById("gs-refresh-btn");
+      var lb = document.getElementById("gs-live-badge");
+      if(rb) rb.style.display = "inline-block";
+      if(lb) lb.style.display = "inline-block";
+      initDashboard(data);
+      setGsStatus("متصل — " + data.length + " سجل | آخر تحديث: " + new Date().toLocaleTimeString(), "#0F7A4F");
+      if(GS_TIMER) clearInterval(GS_TIMER);
+      GS_TIMER = setInterval(function(){
+        fetchGoogleSheet(GAS_PROXY + "?url=" + encodeURIComponent(SHEET_URL));
+      }, GS_INTERVAL_MS);
+    })
+    .catch(function(err){
+      setGsStatus("فشل الاتصال: " + err.message, "#C0392B");
+    });
 }
 
 function refreshGoogleSheet(){
-  if(!GS_URL){ alert('مفيش Sheet مربوط حالياً'); return; }
-  fetchGoogleSheet(false);
-}
-
-function copyGASCode(){
-  var code = document.getElementById('gas-code').textContent;
-  navigator.clipboard.writeText(code).then(function(){
-    alert('✅ تم نسخ الكود');
-  }).catch(function(){
-    var ta=document.createElement('textarea'); ta.value=code;
-    document.body.appendChild(ta); ta.select();
-    document.execCommand('copy'); document.body.removeChild(ta);
-    alert('✅ تم نسخ الكود');
-  });
+  fetchGoogleSheet(GAS_PROXY + "?url=" + encodeURIComponent(SHEET_URL));
 }
 
 function setGsStatus(msg, color){
-  var el = document.getElementById('gs-status');
-  if(el){ el.textContent=msg; el.style.color=color||'#64748b'; el.style.cursor='default'; el.onclick=null; }
-  var hp = document.getElementById('hdr-period');
-  if(hp && GS_URL) hp.textContent='🟢 Google Sheet Live';
+  var el = document.getElementById("gs-status");
+  if(el){ el.textContent = msg; el.style.color = color || "#64748b"; }
+  var hp = document.getElementById("hdr-period");
+  if(hp) hp.textContent = "🟢 Google Sheet Live";
 }
 
 function parseCSV(text){
   if(!text) return [];
-
-  // Normalize line endings
-  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
-  // Parse character by character to handle quoted fields with embedded newlines
-  var rows = [];
-  var cur  = [];      // current row fields
-  var field = '';     // current field value
-  var inQ  = false;   // inside quotes?
-  var i    = 0;
-  var len  = text.length;
-
-  while(i < len){
+  text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  var rows = [], cur = [], field = "", inQ = false, i = 0;
+  while(i < text.length){
     var c = text[i];
-
     if(inQ){
       if(c === '"'){
-        // Check for escaped quote ""
-        if(i+1 < len && text[i+1] === '"'){
-          field += '"';
-          i += 2;
-          continue;
-        }
-        inQ = false;  // closing quote
-      } else {
-        field += c;   // include newlines inside quoted field as-is (part of value)
-      }
+        if(i+1 < text.length && text[i+1] === '"'){field += '"'; i+=2; continue;}
+        inQ = false;
+      } else { field += c; }
     } else {
-      if(c === '"'){
-        inQ = true;   // opening quote
-      } else if(c === ','){
+      if(c === '"'){ inQ = true; }
+      else if(c === ','){ cur.push(field.trim()); field = ""; }
+      else if(c === "\n"){
         cur.push(field.trim());
-        field = '';
-      } else if(c === '\n'){
-        cur.push(field.trim());
-        // Only add row if it has content
-        if(cur.some(function(v){ return v; })){
-          rows.push(cur);
-        }
-        cur   = [];
-        field = '';
-      } else {
-        field += c;
-      }
+        if(cur.some(function(v){ return v; })) rows.push(cur);
+        cur = []; field = "";
+      } else { field += c; }
     }
     i++;
   }
-  // Last field/row
   cur.push(field.trim());
   if(cur.some(function(v){ return v; })) rows.push(cur);
-
   if(rows.length < 2) return [];
-
-  // First row = headers
   var headers = rows[0].map(function(h){ return h.trim(); });
-  var result  = [];
-
+  var result = [];
   for(var r=1; r<rows.length; r++){
-    var vals = rows[r];
-    var obj  = {};
-    var empty = true;
-    headers.forEach(function(h, j){
-      var v = (vals[j] || '').trim();
-      obj[h] = v;
-      if(v) empty = false;
+    var vals=rows[r], obj={}, empty=true;
+    headers.forEach(function(h,j){
+      var v=(vals[j]||"").trim(); obj[h]=v; if(v) empty=false;
     });
     if(!empty) result.push(obj);
   }
   return result;
 }
 
+function splitCSVRow(row){
+  var cols=[], cur="", inQ=false;
+  for(var i=0;i<row.length;i++){
+    var c=row[i];
+    if(c==='"'){inQ=!inQ;}
+    else if(c===","&&!inQ){cols.push(cur);cur="";}
+    else{cur+=c;}
+  }
+  cols.push(cur);
+  return cols;
+}
 
 var _origReset = resetDashboard;
 resetDashboard = function(){
   if(GS_TIMER){ clearInterval(GS_TIMER); GS_TIMER=null; }
-  GS_URL='';
-  var rb=document.getElementById('gs-refresh-btn');
-  var lb=document.getElementById('gs-live-badge');
-  if(rb) rb.style.display='none';
-  if(lb) lb.style.display='none';
+  var rb=document.getElementById("gs-refresh-btn");
+  var lb=document.getElementById("gs-live-badge");
+  if(rb) rb.style.display="none";
+  if(lb) lb.style.display="none";
   _origReset();
 };
 
