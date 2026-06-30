@@ -155,8 +155,60 @@ body{font-family:"Segoe UI",system-ui,sans-serif;background:#f0f4f8;color:#1e293
       <div class="upload-btns">
         <button class="btn-upload" onclick="document.getElementById('file-input').click()">📂 رفع ملف Excel</button>
         <button class="btn-demo" onclick="connectPresetSheet()" style="background:#0F7A4F;border-color:#0F7A4F;color:#fff">🔗 بيانات Live</button>
+        <button onclick="showGASHelp()" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:9px;padding:10px 16px;font-size:12px;font-weight:600;cursor:pointer">⚙️ إعداد CORS</button>
       </div>
       <input id="file-input" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleFile(event)">
+      <!-- GAS Proxy Modal -->
+      <div id="gas-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center">
+        <div style="background:#fff;border-radius:16px;padding:32px;max-width:600px;width:90%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px #0004">
+          <h2 style="font-size:18px;font-weight:800;color:#0C6EBD;margin:0 0 8px">🔧 إعداد Google Apps Script Proxy</h2>
+          <p style="font-size:13px;color:#64748b;margin:0 0 20px">خطوة واحدة لحل مشكلة CORS — تستغرق دقيقتين فقط</p>
+
+          <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:16px;font-size:13px;color:#334155;line-height:1.8">
+            <strong>الخطوات:</strong><br>
+            1. افتح <a href="https://script.google.com" target="_blank" style="color:#0C6EBD">script.google.com</a><br>
+            2. اضغط <strong>New Project</strong><br>
+            3. امسح الكود الموجود والصق الكود التالي:<br>
+          </div>
+
+          <div style="background:#1e293b;border-radius:8px;padding:14px;margin-bottom:16px;position:relative">
+            <button onclick="copyGASCode()" style="position:absolute;top:8px;right:8px;background:#0C6EBD;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer">📋 نسخ</button>
+            <pre id="gas-code" style="color:#e2e8f0;font-size:11px;margin:0;white-space:pre-wrap;font-family:monospace">function doGet(e) {
+  var url = e.parameter.url || e.parameter.sheet;
+  if(!url) return ContentService.createTextOutput('No URL').setMimeType(ContentService.MimeType.TEXT);
+  var response = UrlFetchApp.fetch(url);
+  var content  = response.getContentText();
+  return ContentService.createTextOutput(content)
+    .setMimeType(ContentService.MimeType.TEXT)
+    .setHeaders({"Access-Control-Allow-Origin":"*"});
+}</pre>
+          </div>
+
+          <div style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px;color:#334155;line-height:1.8">
+            4. اضغط 💾 <strong>Save</strong> (Ctrl+S)<br>
+            5. اضغط <strong>Deploy → New deployment</strong><br>
+            6. اختار <strong>Web app</strong><br>
+            7. في "Who has access" اختار <strong>Anyone</strong><br>
+            8. اضغط <strong>Deploy</strong> وانسخ الـ URL<br>
+            9. الصق الـ URL هنا:
+          </div>
+
+          <div style="display:flex;gap:8px;margin-bottom:12px">
+            <input id="gas-url-field" type="text" placeholder="https://script.google.com/macros/s/.../exec"
+              style="flex:1;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;font-size:12px">
+            <button onclick="setGASProxy(document.getElementById('gas-url-field').value.trim())"
+              style="background:#0F7A4F;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">
+              ✅ ربط
+            </button>
+          </div>
+
+          <button onclick="document.getElementById('gas-modal').style.display='none'"
+            style="width:100%;padding:8px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;cursor:pointer;color:#64748b">
+            إغلاق
+          </button>
+        </div>
+      </div>
+
       <div class="col-hint">
         <strong style="color:#334155">الأعمدة المطلوبة / Expected Columns:</strong><br>
         Date &nbsp;|&nbsp; Sex &nbsp;|&nbsp; Nationality &nbsp;|&nbsp; Chest X-Ray &nbsp;|&nbsp; ECG &nbsp;|&nbsp; Blood Group &nbsp;|&nbsp; HIV &nbsp;|&nbsp; Past History &nbsp;|&nbsp; Final Result &nbsp;|&nbsp; Unfit Reason &nbsp;|&nbsp; Unfit to Remote Area
@@ -925,6 +977,9 @@ var PRESET_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRwvgsyb
 
 function connectPresetSheet(){
   GS_URL = PRESET_SHEET_URL;
+  var gasUrl = '';
+  try{ gasUrl = localStorage.getItem('fdmg_gas_url') || ''; }catch(e){}
+  if(gasUrl){ GS_URL = gasUrl + '?url=' + encodeURIComponent(PRESET_SHEET_URL); }
   fetchGoogleSheet(true);
 }
 
@@ -936,65 +991,50 @@ function connectGoogleSheet(){
   fetchGoogleSheet(true);
 }
 
+function setGASProxy(url){
+  if(!url){ alert('الصق رابط GAS أولاً'); return; }
+  try{ localStorage.setItem('fdmg_gas_url', url); }catch(e){}
+  document.getElementById('gas-modal').style.display='none';
+  connectPresetSheet();
+}
+
+function showGASHelp(){
+  document.getElementById('gas-modal').style.display='flex';
+}
+
 function fetchGoogleSheet(isFirst){
   if(!GS_URL) return;
   setGsStatus('⏳ جاري تحميل البيانات...', '#B7770D');
 
-  // Build proxy list - these all support CORS for public URLs
   var encoded = encodeURIComponent(GS_URL);
   var proxies = [
+    GS_URL,
     'https://corsproxy.io/?' + encoded,
     'https://api.allorigins.win/raw?url=' + encoded,
-    'https://api.codetabs.com/v1/proxy?quest=' + encoded,
-    'https://thingproxy.freeboard.io/fetch/' + GS_URL
+    'https://api.codetabs.com/v1/proxy?quest=' + encoded
   ];
   var idx = 0;
 
   function tryNext(){
     if(idx >= proxies.length){
-      // Last resort: try direct (may work if Sheet has CORS headers)
-      tryDirect();
+      setGsStatus('❌ تعذّر الاتصال — اضغط ⚙️ إعداد CORS للحل', '#C0392B');
+      var el = document.getElementById('gs-status');
+      if(el){ el.style.cursor='pointer'; el.onclick=showGASHelp; }
       return;
     }
-    var proxyUrl = proxies[idx++];
-    fetch(proxyUrl, {cache: 'no-store'})
+    var url = proxies[idx++];
+    fetch(url, {cache:'no-store'})
       .then(function(r){
         if(!r.ok) throw new Error(r.status);
         return r.text();
       })
       .then(function(txt){
-        // some proxies wrap in JSON
-        var csv = txt;
-        if(txt.trim().charAt(0) === '{'){
-          try{
-            var j = JSON.parse(txt);
-            csv = j.contents || j.data || j.body || txt;
-          }catch(e){}
+        if(txt.trim().charAt(0)==='{'){
+          try{ var j=JSON.parse(txt); txt=j.contents||j.data||j.body||txt; }catch(e){}
         }
-        processCSV(csv);
+        processCSV(txt);
       })
-      .catch(function(){ setTimeout(tryNext, 200); });
-  }
-
-  function tryDirect(){
-    fetch(GS_URL, {cache: 'no-store', mode: 'no-cors'})
-      .then(function(){
-        // no-cors means opaque response - can't read body
-        // Try XMLHttpRequest instead which sometimes works
-        var xhr = new XMLHttpRequest();
-        xhr.open('GET', GS_URL, true);
-        xhr.onload = function(){
-          if(xhr.status === 200){ processCSV(xhr.responseText); }
-          else{ setGsStatus('❌ تعذّر الاتصال — ' + xhr.status, '#C0392B'); }
-        };
-        xhr.onerror = function(){
-          setGsStatus('❌ تعذّر الاتصال — تأكد أن الـ Sheet منشور للعموم كـ CSV', '#C0392B');
-        };
-        xhr.send();
-      })
-      .catch(function(){
-        setGsStatus('❌ تعذّر الاتصال — تأكد أن الـ Sheet منشور للعموم كـ CSV', '#C0392B');
-      });
+      .catch(function(){ setTimeout(tryNext, 300); });
   }
 
   function processCSV(csvText){
@@ -1003,7 +1043,6 @@ function fetchGoogleSheet(isFirst){
       setGsStatus('⚠️ لا توجد بيانات — تأكد من صحة الرابط', '#C0392B');
       return;
     }
-    // Switch to dashboard
     document.getElementById('upload-screen').style.display = 'none';
     document.getElementById('dashboard').style.display     = 'block';
     document.getElementById('hdr-refresh').textContent     = '🔄 ' + new Date().toLocaleString();
@@ -1013,7 +1052,6 @@ function fetchGoogleSheet(isFirst){
     if(lb) lb.style.display = 'inline-block';
     initDashboard(data);
     setGsStatus('✅ متصل — ' + data.length + ' سجل | آخر تحديث: ' + new Date().toLocaleTimeString(), '#0F7A4F');
-    // Auto-refresh
     if(GS_TIMER) clearInterval(GS_TIMER);
     GS_TIMER = setInterval(function(){ fetchGoogleSheet(false); }, GS_INTERVAL_MS);
   }
@@ -1026,17 +1064,28 @@ function refreshGoogleSheet(){
   fetchGoogleSheet(false);
 }
 
+function copyGASCode(){
+  var code = document.getElementById('gas-code').textContent;
+  navigator.clipboard.writeText(code).then(function(){
+    alert('✅ تم نسخ الكود');
+  }).catch(function(){
+    var ta=document.createElement('textarea'); ta.value=code;
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    alert('✅ تم نسخ الكود');
+  });
+}
+
 function setGsStatus(msg, color){
   var el = document.getElementById('gs-status');
-  if(el){ el.textContent = msg; el.style.color = color || '#64748b'; }
+  if(el){ el.textContent=msg; el.style.color=color||'#64748b'; el.style.cursor='default'; el.onclick=null; }
   var hp = document.getElementById('hdr-period');
-  if(hp && GS_URL) hp.textContent = '🟢 Google Sheet Live';
+  if(hp && GS_URL) hp.textContent='🟢 Google Sheet Live';
 }
 
 function parseCSV(text){
   if(!text) return [];
   var lines = text.split('\n');
-  // also handle \r\n and \r
   var result = [];
   for(var x=0;x<lines.length;x++) result.push(lines[x].replace(/\r$/,''));
   lines = result.filter(function(l){ return l.trim(); });
@@ -1047,11 +1096,12 @@ function parseCSV(text){
     var vals = splitCSVRow(lines[i]);
     if(vals.every(function(v){ return !v.trim(); })) continue;
     var obj = {};
-    headers.forEach(function(h,j){ obj[h.trim()] = (vals[j]||'').trim(); });
+    headers.forEach(function(h,j){ obj[h.trim()]=(vals[j]||'').trim(); });
     rows.push(obj);
   }
   return rows;
 }
+
 function splitCSVRow(row){
   var cols=[], cur='', inQ=false;
   for(var i=0;i<row.length;i++){
@@ -1074,6 +1124,7 @@ resetDashboard = function(){
   if(lb) lb.style.display='none';
   _origReset();
 };
+
 
 // ══════ EXPORT ══════
 // ══════ EXPORT ══════
