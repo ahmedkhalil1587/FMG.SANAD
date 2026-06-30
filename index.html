@@ -154,7 +154,7 @@ body{font-family:"Segoe UI",system-ui,sans-serif;background:#f0f4f8;color:#1e293
          Upload an Excel file (.xlsx / .xls) to generate the analytics dashboard</p>
       <div class="upload-btns">
         <button class="btn-upload" onclick="document.getElementById('file-input').click()">📂 رفع ملف Excel</button>
-        <button class="btn-demo" onclick="loadDemo()">🎯 بيانات تجريبية</button>
+        <button class="btn-demo" onclick="connectPresetSheet()" style="background:#0F7A4F;border-color:#0F7A4F;color:#fff">🔗 بيانات Live</button>
       </div>
       <input id="file-input" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleFile(event)">
       <div class="col-hint">
@@ -916,6 +916,126 @@ function updateShareCount(){
   const el = document.getElementById('share-count');
   if(el) el.textContent = FILTERED.length.toLocaleString();
 }
+
+// ══════ GOOGLE SHEET LIVE CONNECT ══════
+var GS_URL         = '';
+var GS_TIMER       = null;
+var GS_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+var PRESET_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRwvgsyblWWPVBiIh_QmK4NFE1Pmw0v_CpkQhpSAWxDbo6s13il8tgtbn5fjH019zJQFUYjNGE-Tu2t/pub?output=csv";
+
+function connectPresetSheet(){
+  document.getElementById('gs-url-input').value = PRESET_SHEET_URL;
+  connectGoogleSheet();
+}
+
+function connectGoogleSheet(){
+  var url = (document.getElementById('gs-url-input').value || '').trim();
+  if(!url){ alert('من فضلك الصق رابط Google Sheet CSV'); return; }
+
+  // Ensure it's a CSV export link
+  if(url.includes('spreadsheets/d/') && !url.includes('output=csv')){
+    // Convert regular Sheet URL to published CSV URL
+    alert('الرابط ده مش CSV link\nاستخدم: File → Share → Publish to web → CSV');
+    return;
+  }
+
+  GS_URL = url;
+  setGsStatus('⏳ جاري الاتصال...', '#B7770D');
+  fetchGoogleSheet(true);
+}
+
+function fetchGoogleSheet(isFirst){
+  if(!GS_URL) return;
+  setGsStatus('⏳ جاري تحميل البيانات...', '#B7770D');
+
+  fetch(GS_URL)
+    .then(function(r){
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    })
+    .then(function(csvText){
+      var data = parseCSV(csvText);
+      if(!data.length){ setGsStatus('⚠️ لا توجد بيانات في الـ Sheet', '#C0392B'); return; }
+
+      // Show dashboard
+      document.getElementById('upload-screen').style.display = 'none';
+      document.getElementById('dashboard').style.display     = 'block';
+      document.getElementById('hdr-refresh').textContent = '🔄 ' + new Date().toLocaleString();
+
+      // Show live controls
+      document.getElementById('gs-refresh-btn').style.display = 'inline-block';
+      document.getElementById('gs-live-badge').style.display  = 'inline-block';
+
+      initDashboard(data);
+
+      var msg = '✅ متصل — ' + data.length + ' سجل | آخر تحديث: ' + new Date().toLocaleTimeString();
+      setGsStatus(msg, '#0F7A4F');
+
+      // Schedule auto-refresh
+      if(GS_TIMER) clearInterval(GS_TIMER);
+      GS_TIMER = setInterval(function(){ fetchGoogleSheet(false); }, GS_INTERVAL_MS);
+    })
+    .catch(function(err){
+      setGsStatus('❌ فشل الاتصال: ' + err.message + ' — تأكد أن الـ Sheet منشور للعموم', '#C0392B');
+    });
+}
+
+function refreshGoogleSheet(){
+  if(!GS_URL){ alert('مفيش Sheet مربوط حالياً'); return; }
+  fetchGoogleSheet(false);
+}
+
+function setGsStatus(msg, color){
+  var el = document.getElementById('gs-status');
+  if(el){ el.textContent = msg; el.style.color = color || '#64748b'; }
+  // Also update header period if on dashboard
+  var hp = document.getElementById('hdr-period');
+  if(hp && GS_URL) hp.textContent = '🟢 Google Sheet Live';
+}
+
+// ── Parse CSV text → array of objects ──
+function parseCSV(text){
+  var lines = text.split(/\r?\n/).filter(function(l){ return l.trim(); });
+  if(lines.length < 2) return [];
+  var headers = splitCSVRow(lines[0]);
+  var rows = [];
+  for(var i=1; i<lines.length; i++){
+    var vals = splitCSVRow(lines[i]);
+    if(vals.every(function(v){ return !v.trim(); })) continue; // skip blank rows
+    var obj = {};
+    headers.forEach(function(h,j){
+      obj[h.trim()] = (vals[j] || '').trim();
+    });
+    rows.push(obj);
+  }
+  return rows;
+}
+
+// ── Split a CSV row respecting quoted fields ──
+function splitCSVRow(row){
+  var cols = [], cur = '', inQ = false;
+  for(var i=0; i<row.length; i++){
+    var c = row[i];
+    if(c==='"'){ inQ=!inQ; }
+    else if(c===',' && !inQ){ cols.push(cur); cur=''; }
+    else { cur+=c; }
+  }
+  cols.push(cur);
+  return cols;
+}
+
+// Override resetDashboard to also stop GS timer
+var _origReset = resetDashboard;
+resetDashboard = function(){
+  if(GS_TIMER){ clearInterval(GS_TIMER); GS_TIMER=null; }
+  GS_URL='';
+  var rb = document.getElementById('gs-refresh-btn');
+  var lb = document.getElementById('gs-live-badge');
+  if(rb) rb.style.display='none';
+  if(lb) lb.style.display='none';
+  _origReset();
+};
 
 // ══════ EXPORT ══════
 function exportStat(key){
