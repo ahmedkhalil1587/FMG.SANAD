@@ -160,52 +160,32 @@ body{font-family:"Segoe UI",system-ui,sans-serif;background:#f0f4f8;color:#1e293
       <input id="file-input" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleFile(event)">
       <!-- GAS Proxy Modal -->
       <div id="gas-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center">
-        <div style="background:#fff;border-radius:16px;padding:32px;max-width:600px;width:90%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px #0004">
-          <h2 style="font-size:18px;font-weight:800;color:#0C6EBD;margin:0 0 8px">🔧 إعداد Google Apps Script Proxy</h2>
-          <p style="font-size:13px;color:#64748b;margin:0 0 20px">خطوة واحدة لحل مشكلة CORS — تستغرق دقيقتين فقط</p>
-
-          <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:16px;font-size:13px;color:#334155;line-height:1.8">
-            <strong>الخطوات:</strong><br>
-            1. افتح <a href="https://script.google.com" target="_blank" style="color:#0C6EBD">script.google.com</a><br>
+        <div style="background:#fff;border-radius:16px;padding:28px;max-width:580px;width:90%;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px #0004">
+          <h2 style="font-size:17px;font-weight:800;color:#0C6EBD;margin:0 0 6px">🔧 إعداد Google Apps Script Proxy</h2>
+          <p style="font-size:12px;color:#64748b;margin:0 0 16px">خطوة واحدة لحل مشكلة CORS — دقيقتين فقط</p>
+          <div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px;font-size:12px;color:#334155;line-height:1.9">
+            1. افتح <a href="https://script.google.com" target="_blank" style="color:#0C6EBD;font-weight:700">script.google.com</a><br>
             2. اضغط <strong>New Project</strong><br>
-            3. امسح الكود الموجود والصق الكود التالي:<br>
+            3. امسح الكود والصق الكود التالي ثم احفظ (Ctrl+S)<br>
+            4. اضغط <strong>Deploy → New deployment → Web app</strong><br>
+            5. في "Who has access" اختار <strong>Anyone</strong> ثم Deploy<br>
+            6. انسخ الـ URL والصقه في الحقل أدناه
           </div>
-
-          <div style="background:#1e293b;border-radius:8px;padding:14px;margin-bottom:16px;position:relative">
-            <button onclick="copyGASCode()" style="position:absolute;top:8px;right:8px;background:#0C6EBD;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer">📋 نسخ</button>
+          <div style="background:#1e293b;border-radius:8px;padding:12px;margin-bottom:14px;position:relative">
+            <button onclick="copyGASCode()" style="position:absolute;top:8px;right:8px;background:#0C6EBD;color:#fff;border:none;border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer">📋 نسخ</button>
             <pre id="gas-code" style="color:#e2e8f0;font-size:11px;margin:0;white-space:pre-wrap;font-family:monospace">function doGet(e) {
-  var url = e.parameter.url || e.parameter.sheet;
-  if(!url) return ContentService.createTextOutput('No URL').setMimeType(ContentService.MimeType.TEXT);
-  var response = UrlFetchApp.fetch(url);
-  var content  = response.getContentText();
-  return ContentService.createTextOutput(content)
-    .setMimeType(ContentService.MimeType.TEXT)
-    .setHeaders({"Access-Control-Allow-Origin":"*"});
+  var url = e.parameter.url;
+  if(!url) return ContentService.createTextOutput('No URL');
+  var res = UrlFetchApp.fetch(url);
+  return ContentService.createTextOutput(res.getContentText())
+    .setMimeType(ContentService.MimeType.TEXT);
 }</pre>
           </div>
-
-          <div style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px;color:#334155;line-height:1.8">
-            4. اضغط 💾 <strong>Save</strong> (Ctrl+S)<br>
-            5. اضغط <strong>Deploy → New deployment</strong><br>
-            6. اختار <strong>Web app</strong><br>
-            7. في "Who has access" اختار <strong>Anyone</strong><br>
-            8. اضغط <strong>Deploy</strong> وانسخ الـ URL<br>
-            9. الصق الـ URL هنا:
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <input id="gas-url-field" type="text" placeholder="https://script.google.com/macros/s/.../exec" style="flex:1;border:1px solid #cbd5e1;border-radius:7px;padding:8px 12px;font-size:12px">
+            <button onclick="setGASProxy(document.getElementById('gas-url-field').value.trim())" style="background:#0F7A4F;color:#fff;border:none;border-radius:7px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">✅ ربط</button>
           </div>
-
-          <div style="display:flex;gap:8px;margin-bottom:12px">
-            <input id="gas-url-field" type="text" placeholder="https://script.google.com/macros/s/.../exec"
-              style="flex:1;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;font-size:12px">
-            <button onclick="setGASProxy(document.getElementById('gas-url-field').value.trim())"
-              style="background:#0F7A4F;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">
-              ✅ ربط
-            </button>
-          </div>
-
-          <button onclick="document.getElementById('gas-modal').style.display='none'"
-            style="width:100%;padding:8px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;cursor:pointer;color:#64748b">
-            إغلاق
-          </button>
+          <button onclick="document.getElementById('gas-modal').style.display='none'" style="width:100%;padding:8px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;cursor:pointer;color:#64748b">إغلاق</button>
         </div>
       </div>
 
