@@ -920,28 +920,19 @@ function updateShareCount(){
 // ══════ GOOGLE SHEET LIVE CONNECT ══════
 var GS_URL         = '';
 var GS_TIMER       = null;
-var GS_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-
+var GS_INTERVAL_MS = 5 * 60 * 1000;
 var PRESET_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRwvgsyblWWPVBiIh_QmK4NFE1Pmw0v_CpkQhpSAWxDbo6s13il8tgtbn5fjH019zJQFUYjNGE-Tu2t/pub?output=csv";
 
 function connectPresetSheet(){
-  document.getElementById('gs-url-input').value = PRESET_SHEET_URL;
-  connectGoogleSheet();
+  GS_URL = PRESET_SHEET_URL;
+  fetchGoogleSheet(true);
 }
 
 function connectGoogleSheet(){
-  var url = (document.getElementById('gs-url-input').value || '').trim();
+  var inp = document.getElementById('gs-url-input');
+  var url = inp ? inp.value.trim() : '';
   if(!url){ alert('من فضلك الصق رابط Google Sheet CSV'); return; }
-
-  // Ensure it's a CSV export link
-  if(url.includes('spreadsheets/d/') && !url.includes('output=csv')){
-    // Convert regular Sheet URL to published CSV URL
-    alert('الرابط ده مش CSV link\nاستخدم: File → Share → Publish to web → CSV');
-    return;
-  }
-
   GS_URL = url;
-  setGsStatus('⏳ جاري الاتصال...', '#B7770D');
   fetchGoogleSheet(true);
 }
 
@@ -949,46 +940,86 @@ function fetchGoogleSheet(isFirst){
   if(!GS_URL) return;
   setGsStatus('⏳ جاري تحميل البيانات...', '#B7770D');
 
+  // Build proxy list - these all support CORS for public URLs
+  var encoded = encodeURIComponent(GS_URL);
   var proxies = [
-    GS_URL,
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent(GS_URL),
-    'https://corsproxy.io/?' + encodeURIComponent(GS_URL),
-    'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(GS_URL)
+    'https://corsproxy.io/?' + encoded,
+    'https://api.allorigins.win/raw?url=' + encoded,
+    'https://api.codetabs.com/v1/proxy?quest=' + encoded,
+    'https://thingproxy.freeboard.io/fetch/' + GS_URL
   ];
-  var attempts = 0;
+  var idx = 0;
 
   function tryNext(){
-    if(attempts >= proxies.length){
-      setGsStatus('❌ تعذّر الاتصال — تأكد أن الـ Sheet منشور للعموم كـ CSV', '#C0392B');
+    if(idx >= proxies.length){
+      // Last resort: try direct (may work if Sheet has CORS headers)
+      tryDirect();
       return;
     }
-    var url = proxies[attempts++];
-    fetch(url)
+    var proxyUrl = proxies[idx++];
+    fetch(proxyUrl, {cache: 'no-store'})
       .then(function(r){
-        if(!r.ok) throw new Error('HTTP ' + r.status);
+        if(!r.ok) throw new Error(r.status);
         return r.text();
       })
-      .then(function(text){
-        if(text.trim().startsWith('{"contents"')){
-          try{ text = JSON.parse(text).contents; }catch(e){}
+      .then(function(txt){
+        // some proxies wrap in JSON
+        var csv = txt;
+        if(txt.trim().charAt(0) === '{'){
+          try{
+            var j = JSON.parse(txt);
+            csv = j.contents || j.data || j.body || txt;
+          }catch(e){}
         }
-        var data = parseCSV(text);
-        if(!data.length){ setGsStatus('⚠️ لا توجد بيانات في الـ Sheet', '#C0392B'); return; }
-        document.getElementById('upload-screen').style.display = 'none';
-        document.getElementById('dashboard').style.display     = 'block';
-        document.getElementById('hdr-refresh').textContent     = '🔄 ' + new Date().toLocaleString();
-        document.getElementById('gs-refresh-btn').style.display = 'inline-block';
-        document.getElementById('gs-live-badge').style.display  = 'inline-block';
-        initDashboard(data);
-        setGsStatus('✅ متصل — ' + data.length + ' سجل | آخر تحديث: ' + new Date().toLocaleTimeString(), '#0F7A4F');
-        if(GS_TIMER) clearInterval(GS_TIMER);
-        GS_TIMER = setInterval(function(){ fetchGoogleSheet(false); }, GS_INTERVAL_MS);
+        processCSV(csv);
       })
-      .catch(function(){ tryNext(); });
+      .catch(function(){ setTimeout(tryNext, 200); });
   }
+
+  function tryDirect(){
+    fetch(GS_URL, {cache: 'no-store', mode: 'no-cors'})
+      .then(function(){
+        // no-cors means opaque response - can't read body
+        // Try XMLHttpRequest instead which sometimes works
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', GS_URL, true);
+        xhr.onload = function(){
+          if(xhr.status === 200){ processCSV(xhr.responseText); }
+          else{ setGsStatus('❌ تعذّر الاتصال — ' + xhr.status, '#C0392B'); }
+        };
+        xhr.onerror = function(){
+          setGsStatus('❌ تعذّر الاتصال — تأكد أن الـ Sheet منشور للعموم كـ CSV', '#C0392B');
+        };
+        xhr.send();
+      })
+      .catch(function(){
+        setGsStatus('❌ تعذّر الاتصال — تأكد أن الـ Sheet منشور للعموم كـ CSV', '#C0392B');
+      });
+  }
+
+  function processCSV(csvText){
+    var data = parseCSV(csvText);
+    if(!data || !data.length){
+      setGsStatus('⚠️ لا توجد بيانات — تأكد من صحة الرابط', '#C0392B');
+      return;
+    }
+    // Switch to dashboard
+    document.getElementById('upload-screen').style.display = 'none';
+    document.getElementById('dashboard').style.display     = 'block';
+    document.getElementById('hdr-refresh').textContent     = '🔄 ' + new Date().toLocaleString();
+    var rb = document.getElementById('gs-refresh-btn');
+    var lb = document.getElementById('gs-live-badge');
+    if(rb) rb.style.display = 'inline-block';
+    if(lb) lb.style.display = 'inline-block';
+    initDashboard(data);
+    setGsStatus('✅ متصل — ' + data.length + ' سجل | آخر تحديث: ' + new Date().toLocaleTimeString(), '#0F7A4F');
+    // Auto-refresh
+    if(GS_TIMER) clearInterval(GS_TIMER);
+    GS_TIMER = setInterval(function(){ fetchGoogleSheet(false); }, GS_INTERVAL_MS);
+  }
+
   tryNext();
 }
-
 
 function refreshGoogleSheet(){
   if(!GS_URL){ alert('مفيش Sheet مربوط حالياً'); return; }
@@ -998,54 +1029,53 @@ function refreshGoogleSheet(){
 function setGsStatus(msg, color){
   var el = document.getElementById('gs-status');
   if(el){ el.textContent = msg; el.style.color = color || '#64748b'; }
-  // Also update header period if on dashboard
   var hp = document.getElementById('hdr-period');
   if(hp && GS_URL) hp.textContent = '🟢 Google Sheet Live';
 }
 
-// ── Parse CSV text → array of objects ──
 function parseCSV(text){
-  var lines = text.split(/\r?\n/).filter(function(l){ return l.trim(); });
+  if(!text) return [];
+  var lines = text.split('\n');
+  // also handle \r\n and \r
+  var result = [];
+  for(var x=0;x<lines.length;x++) result.push(lines[x].replace(/\r$/,''));
+  lines = result.filter(function(l){ return l.trim(); });
   if(lines.length < 2) return [];
   var headers = splitCSVRow(lines[0]);
   var rows = [];
   for(var i=1; i<lines.length; i++){
     var vals = splitCSVRow(lines[i]);
-    if(vals.every(function(v){ return !v.trim(); })) continue; // skip blank rows
+    if(vals.every(function(v){ return !v.trim(); })) continue;
     var obj = {};
-    headers.forEach(function(h,j){
-      obj[h.trim()] = (vals[j] || '').trim();
-    });
+    headers.forEach(function(h,j){ obj[h.trim()] = (vals[j]||'').trim(); });
     rows.push(obj);
   }
   return rows;
 }
-
-// ── Split a CSV row respecting quoted fields ──
 function splitCSVRow(row){
-  var cols = [], cur = '', inQ = false;
-  for(var i=0; i<row.length; i++){
-    var c = row[i];
+  var cols=[], cur='', inQ=false;
+  for(var i=0;i<row.length;i++){
+    var c=row[i];
     if(c==='"'){ inQ=!inQ; }
-    else if(c===',' && !inQ){ cols.push(cur); cur=''; }
-    else { cur+=c; }
+    else if(c===','&&!inQ){ cols.push(cur); cur=''; }
+    else{ cur+=c; }
   }
   cols.push(cur);
   return cols;
 }
 
-// Override resetDashboard to also stop GS timer
 var _origReset = resetDashboard;
 resetDashboard = function(){
   if(GS_TIMER){ clearInterval(GS_TIMER); GS_TIMER=null; }
   GS_URL='';
-  var rb = document.getElementById('gs-refresh-btn');
-  var lb = document.getElementById('gs-live-badge');
+  var rb=document.getElementById('gs-refresh-btn');
+  var lb=document.getElementById('gs-live-badge');
   if(rb) rb.style.display='none';
   if(lb) lb.style.display='none';
   _origReset();
 };
 
+// ══════ EXPORT ══════
 // ══════ EXPORT ══════
 function exportStat(key){
   const F=FILTERED, total=F.length;
