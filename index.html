@@ -949,37 +949,46 @@ function fetchGoogleSheet(isFirst){
   if(!GS_URL) return;
   setGsStatus('⏳ جاري تحميل البيانات...', '#B7770D');
 
-  fetch(GS_URL)
-    .then(function(r){
-      if(!r.ok) throw new Error('HTTP ' + r.status);
-      return r.text();
-    })
-    .then(function(csvText){
-      var data = parseCSV(csvText);
-      if(!data.length){ setGsStatus('⚠️ لا توجد بيانات في الـ Sheet', '#C0392B'); return; }
+  var proxies = [
+    GS_URL,
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(GS_URL),
+    'https://corsproxy.io/?' + encodeURIComponent(GS_URL),
+    'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(GS_URL)
+  ];
+  var attempts = 0;
 
-      // Show dashboard
-      document.getElementById('upload-screen').style.display = 'none';
-      document.getElementById('dashboard').style.display     = 'block';
-      document.getElementById('hdr-refresh').textContent = '🔄 ' + new Date().toLocaleString();
-
-      // Show live controls
-      document.getElementById('gs-refresh-btn').style.display = 'inline-block';
-      document.getElementById('gs-live-badge').style.display  = 'inline-block';
-
-      initDashboard(data);
-
-      var msg = '✅ متصل — ' + data.length + ' سجل | آخر تحديث: ' + new Date().toLocaleTimeString();
-      setGsStatus(msg, '#0F7A4F');
-
-      // Schedule auto-refresh
-      if(GS_TIMER) clearInterval(GS_TIMER);
-      GS_TIMER = setInterval(function(){ fetchGoogleSheet(false); }, GS_INTERVAL_MS);
-    })
-    .catch(function(err){
-      setGsStatus('❌ فشل الاتصال: ' + err.message + ' — تأكد أن الـ Sheet منشور للعموم', '#C0392B');
-    });
+  function tryNext(){
+    if(attempts >= proxies.length){
+      setGsStatus('❌ تعذّر الاتصال — تأكد أن الـ Sheet منشور للعموم كـ CSV', '#C0392B');
+      return;
+    }
+    var url = proxies[attempts++];
+    fetch(url)
+      .then(function(r){
+        if(!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      })
+      .then(function(text){
+        if(text.trim().startsWith('{"contents"')){
+          try{ text = JSON.parse(text).contents; }catch(e){}
+        }
+        var data = parseCSV(text);
+        if(!data.length){ setGsStatus('⚠️ لا توجد بيانات في الـ Sheet', '#C0392B'); return; }
+        document.getElementById('upload-screen').style.display = 'none';
+        document.getElementById('dashboard').style.display     = 'block';
+        document.getElementById('hdr-refresh').textContent     = '🔄 ' + new Date().toLocaleString();
+        document.getElementById('gs-refresh-btn').style.display = 'inline-block';
+        document.getElementById('gs-live-badge').style.display  = 'inline-block';
+        initDashboard(data);
+        setGsStatus('✅ متصل — ' + data.length + ' سجل | آخر تحديث: ' + new Date().toLocaleTimeString(), '#0F7A4F');
+        if(GS_TIMER) clearInterval(GS_TIMER);
+        GS_TIMER = setInterval(function(){ fetchGoogleSheet(false); }, GS_INTERVAL_MS);
+      })
+      .catch(function(){ tryNext(); });
+  }
+  tryNext();
 }
+
 
 function refreshGoogleSheet(){
   if(!GS_URL){ alert('مفيش Sheet مربوط حالياً'); return; }
